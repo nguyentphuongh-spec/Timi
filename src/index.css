@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-primary: #FF758F;
+    --color-primary-dark: #D81B60;
+    --color-primary-light: #FFE4E8;
+    --color-primary-soft: #FFF0F3;
+    --color-primary-gradient: linear-gradient(135deg, #FF85A1 0%, #FFAAA6 100%);
+    --color-bg-main: #FFF5F7;
+    --color-bg-card: #FFFFFF;
+    --color-border: #FFCCD5;
+    --color-border-hover: #FF85A1;
+    --color-text: #4A3B43;
+    --color-text-muted: #8C6D7C;
+  }
+
+  html, body {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    max-width: 100vw;
+    font-family: 'Quicksand', sans-serif;
+    background-color: var(--color-bg-main);
+    color: var(--color-text);
+  }
+}
+
+.font-quicksand {
+  font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.font-nunito {
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.font-bevietnam {
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* FONT SIZES */
+.font-size-sm {
+  font-size: 14px;
+}
+.font-size-sm .text-xs { font-size: 0.7rem; }
+.font-size-sm .text-sm { font-size: 0.8rem; }
+.font-size-sm .text-base { font-size: 0.9rem; }
+
+.font-size-md {
+  font-size: 16px;
+}
+
+.font-size-lg {
+  font-size: 18px;
+}
+.font-size-lg .text-xs { font-size: 0.85rem; }
+.font-size-lg .text-sm { font-size: 0.95rem; }
+.font-size-lg .text-base { font-size: 1.1rem; }
+
+/* THEME SYSTEM (AUTOMATIC SYNCHRONIZATION VIA CSS VARIABLES) */
+/* 1. Hoa Anh Đào (Sakura Pink) */
+.theme-sakura {
+  --color-primary: #FF758F;
+  --color-primary-dark: #D81B60;
+  --color-primary-light: #FFE4E8;
+  --color-primary-soft: #FFF0F3;
+  --color-primary-gradient: linear-gradient(135deg, #FF85A1 0%, #FFAAA6 100%);
+  --color-bg-main: #FFF5F7;
+  --color-bg-card: #FFFFFF;
+  --color-border: #FFCCD5;
+  --color-border-hover: #FF85A1;
+  --color-text: #4A3B43;
+  --color-text-muted: #8C6D7C;
+  background-color: var(--color-bg-main);
+  color: var(--color-text);
+}
+
+/* 2. Bạc Hà Dịu Mát (Fresh Mint) */
+.theme-mint {
+  --color-primary: #10B981;
+  --color-primary-dark: #059669;
+  --color-primary-light: #DCFCE7;
+  --color-primary-soft: #F0FDF4;
+  --color-primary-gradient: linear-gradient(135deg, #34D399 0%, #10B981 100%);
+  --color-bg-main: #F0FDF4;
+  --color-bg-card: #FFFFFF;
+  --color-border: #BBF7D0;
+  --color-border-hover: #10B981;
+  --color-text: #1C3829;
+  --color-text-muted: #4B6E59;
+  background-color: var(--color-bg-main);
+  color: var(--color-text);
+}
+
+/* 3. Oải Hương Mộng Mơ (Lavender Dream) */
+.theme-lavender {
+  --color-primary: #A855F7;
+  --color-primary-dark: #7E22CE;
+  --color-primary-light: #F3E8FF;
+  --color-primary-soft: #FAF5FF;
+  --color-primary-gradient: linear-gradient(135deg, #C084FC 0%, #A855F7 100%);
+  --color-bg-main: #FAF5FF;
+  --color-bg-card: #FFFFFF;
+  --color-border: #E9D5FF;
+  --color-border-hover: #A855F7;
+  --color-text: #332442;
+  --color-text-muted: #6B567D;
+  background-color: var(--color-bg-main);
+  color: var(--color-text);
+}
+
+/* 4. Cam Đào Nắng Ấm (Sweet Peach) */
+.theme-peach,
+.theme-sweet_peach {
+  --color-primary: #F97316;
+  --color-primary-dark: #C2410C;
+  --color-primary-light: #FFEDD5;
+  --color-primary-soft: #FFF7ED;
+  --color-primary-gradient: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+  --color-bg-main: #FFF7ED;
+  --color-bg-card: #FFFFFF;
+  --color-border: #FED7AA;
+  --color-border-hover: #F97316;
+  --color-text: #43281C;
+  --color-text-muted: #7C5E4E;
+  background-color: var(--color-bg-main);
+  color: var(--color-text);
+}
+
+/* 5. Night Pastel (Dark Study Mode) */
+.theme-night_pastel {
+  --color-primary: #EC4899;
+  --color-primary-dark: #F472B6;
+  --color-primary-light: #3D2D49;
+  --color-primary-soft: #231C2E;
+  --color-primary-gradient: linear-gradient(135deg, #F472B6 0%, #EC4899 100%);
+  --color-bg-main: #181520;
+  --color-bg-card: #221E2C;
+  --color-border: #3D354E;
+  --color-border-hover: #F472B6;
+  --color-text: #F3E8FF;
+  --color-text-muted: #B8A8CC;
+  background-color: var(--color-bg-main);
+  color: var(--color-text);
+}
+
+/* DYNAMIC THEMED COMPONENT CLASSES */
+.themed-header-logo-bg {
+  background: var(--color-primary-gradient);
+}
+.themed-brand-text {
+  color: var(--color-primary-dark);
+}
+.themed-badge-pill {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary-dark);
+}
+.themed-primary-btn {
+  background: var(--color-primary-gradient);
+  color: white;
+}
+.themed-primary-btn:hover {
+  opacity: 0.95;
+  filter: brightness(1.03);
+}
+.themed-outline-btn {
+  border-color: var(--color-border);
+  color: var(--color-primary-dark);
+  background-color: var(--color-primary-soft);
+}
+.themed-outline-btn:hover {
+  background-color: var(--color-primary-light);
+  border-color: var(--color-border-hover);
+}
+.themed-card {
+  background-color: var(--color-bg-card);
+  border-color: var(--color-border);
+}
+.themed-card:hover {
+  border-color: var(--color-border-hover);
+}
+
+/* Animations */
+@keyframes petBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px) rotate(1deg); }
+}
+
+@keyframes petWander {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(18px) scaleX(1); }
+  50% { transform: translateX(0) scaleX(-1); }
+  75% { transform: translateX(-18px) scaleX(-1); }
+  100% { transform: translateX(0) scaleX(1); }
+}
+
+@keyframes floatHearts {
+  0% { transform: translateY(0) scale(0.8); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-30px) scale(1.2); opacity: 0; }
+}
+
+.animate-pet-bounce {
+  animation: petBounce 2.5s ease-in-out infinite;
+}
+
+.animate-pet-wander {
+  animation: petWander 9s ease-in-out infinite;
+}
+
+.animate-float-heart {
+  animation: floatHearts 2s ease-out infinite;
+}
+
+@keyframes fadeOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+.animate-fade-out {
+  animation: fadeOutDown 0.22s ease-out forwards;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

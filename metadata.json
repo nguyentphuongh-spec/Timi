@@ -1,0 +1,8 @@
+{
+  "name": "Remix TIMI",
+  "description": "Ứng dụng quản lý thời gian, thời gian biểu và thú cưng ảo hỗ trợ sinh viên học tập, tập trung Pomodoro và đúng giờ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
