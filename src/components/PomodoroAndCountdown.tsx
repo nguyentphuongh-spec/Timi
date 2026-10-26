@@ -18,6 +18,13 @@ import { Task, UserSettings, VirtualPet } from '../types';
 import { playChime, playSuccessSound, toggleAmbientRain } from '../utils/audio';
 import { MascotAvatar } from './CuteIllustrations';
 
+export interface FocusOverlayLaunchParams {
+  mode: 'work' | 'break' | 'long_break';
+  durationMinutes: number;
+  initialSeconds?: number;
+  task: Task | null;
+}
+
 interface PomodoroAndCountdownProps {
   tasks: Task[];
   settings: UserSettings;
@@ -26,7 +33,7 @@ interface PomodoroAndCountdownProps {
   selectedTask?: Task | null;
   onCompletePomodoroSession: (focusMinutes: number) => void;
   onUpdateSettings: (newSettings: Partial<UserSettings>) => void;
-  onStartFocusOverlay?: (task: Task | null) => void;
+  onStartFocusOverlay?: (params: FocusOverlayLaunchParams | Task | null) => void;
 }
 
 export const PomodoroAndCountdown: React.FC<PomodoroAndCountdownProps> = ({
@@ -39,7 +46,7 @@ export const PomodoroAndCountdown: React.FC<PomodoroAndCountdownProps> = ({
   onUpdateSettings,
   onStartFocusOverlay,
 }) => {
-  // Mode: 'pomodoro_work' | 'pomodoro_break' | 'task_countdown'
+  // Mode: 'work' | 'break' | 'long_break'
   const [mode, setMode] = useState<'work' | 'break' | 'long_break'>('work');
   const [activeTaskId, setActiveTaskId] = useState<string>(selectedTask ? selectedTask.id : (tasks[0]?.id || ''));
 
@@ -118,6 +125,16 @@ export const PomodoroAndCountdown: React.FC<PomodoroAndCountdownProps> = ({
   const toggleTimer = () => {
     if (!isRunning) {
       playChime('sweet');
+      // When Start is clicked, activate Focus Overlay (Screen Disable Mode) immediately
+      if (onStartFocusOverlay) {
+        onStartFocusOverlay({
+          mode,
+          durationMinutes: mode === 'work' ? workDuration : mode === 'break' ? breakDuration : longBreakDuration,
+          initialSeconds: timeLeft,
+          task: activeTask || null
+        });
+        return;
+      }
     }
     setIsRunning(!isRunning);
   };
@@ -287,7 +304,12 @@ export const PomodoroAndCountdown: React.FC<PomodoroAndCountdownProps> = ({
           {/* Launch Fullscreen Focus Overlay Mode */}
           {onStartFocusOverlay && (
             <button
-              onClick={() => onStartFocusOverlay(activeTask || null)}
+              onClick={() => onStartFocusOverlay({
+                mode,
+                durationMinutes: mode === 'work' ? workDuration : mode === 'break' ? breakDuration : longBreakDuration,
+                initialSeconds: timeLeft,
+                task: activeTask || null
+              })}
               className="px-5 py-3 rounded-2xl bg-gradient-to-r from-[#D81B60] to-[#FF85A1] text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md hover:scale-105 transition cursor-pointer"
               title="Bật Chế Độ Khóa Màn Hình Tập Trung"
             >
@@ -463,7 +485,26 @@ export const PomodoroAndCountdown: React.FC<PomodoroAndCountdownProps> = ({
               </h5>
               <div className="flex items-center justify-between text-[11px] text-[#8C6D7C] mt-2 pt-1.5 border-t border-black/5">
                 <span>Hạn: {task.dueTime || 'Trong ngày'}</span>
-                <span className="text-[#FF85A1] font-bold">Bấm để tập trung</span>
+                {onStartFocusOverlay ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStartFocusOverlay({
+                        mode: 'work',
+                        durationMinutes: task.durationMinutes || 25,
+                        initialSeconds: (task.durationMinutes || 25) * 60,
+                        task
+                      });
+                    }}
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-[#FF85A1] text-white hover:bg-[#FF6B8B] transition flex items-center gap-1 cursor-pointer shadow-xs"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-current" />
+                    <span>Bắt Đầu</span>
+                  </button>
+                ) : (
+                  <span className="text-[#FF85A1] font-bold">Bấm để tập trung</span>
+                )}
               </div>
             </div>
           ))}

@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { UserProfile } from '../types';
 import { loadData, saveData, removeData, clearPersonalizationOnLogout } from './storage';
+import { syncGoogleLoginWithBackend, notifyBackendLogout } from './studentBackend';
 
 // Standard Firebase config - can be configured via environment variables
 const firebaseConfig = {
@@ -51,7 +52,7 @@ export function getInitialsFromName(name: string): string {
 export function formatFirebaseUser(user: FirebaseUser): UserProfile {
   const customUni = loadData<string>(`university_${user.uid}`, '');
   const customMajor = loadData<string>(`major_${user.uid}`, '');
-  const displayName = user.displayName || 'Phương Hằng';
+  const displayName = user.displayName || user.email?.split('@')[0] || 'Sinh viên';
 
   return {
     id: user.uid,
@@ -65,17 +66,52 @@ export function formatFirebaseUser(user: FirebaseUser): UserProfile {
     canBookmark: true,
     createdAt: user.metadata.creationTime || new Date().toISOString(),
     provider: 'google',
-    isLoggedIn: true
+    isLoggedIn: true,
+    linkedGoogle: true
   };
 }
 
 /**
- * Sign in using Google Auth Provider via Popup or Redirect
- * Supports graceful fallback if browser/iframe blocks popups
+ * Sign in using Google Auth Provider via Popup, Redirect or Selected Google Account
+ * Links directly with backend student record and retrieves saved profile
  */
-export async function signInWithGoogle(): Promise<UserProfile> {
-  // If real Firebase Auth instance is active
-  if (auth && googleProvider) {
+export async function signInWithGoogle(chosenAccount?: { 
+  id?: string; 
+  email?: string; 
+  name?: string; 
+  picture?: string; 
+  university?: string; 
+  major?: string; 
+  studentCode?: string 
+}): Promise<UserProfile> {
+  let profile: UserProfile | null = null;
+
+  // If a specific Google account was chosen by user
+  if (chosenAccount && chosenAccount.email) {
+    const email = chosenAccount.email.trim().toLowerCase();
+    const name = chosenAccount.name?.trim() || email.split('@')[0];
+    const uid = chosenAccount.id || `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    profile = {
+      id: uid,
+      email,
+      name,
+      avatar: getInitialsFromName(name),
+      picture: chosenAccount.picture,
+      university: chosenAccount.university || loadData<string>(`university_${uid}`, ''),
+      major: chosenAccount.major || loadData<string>(`major_${uid}`, ''),
+      studentCode: chosenAccount.studentCode || loadData<string>(`code_${uid}`, ''),
+      canNotify: true,
+      canBookmark: true,
+      createdAt: new Date().toISOString(),
+      provider: 'google',
+      isLoggedIn: true,
+      linkedGoogle: true
+    };
+  }
+
+  // If no account specified, try native Google popup / Firebase Auth
+  if (!profile && auth && googleProvider) {
     try {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       let user: FirebaseUser | null = null;
@@ -83,51 +119,90 @@ export async function signInWithGoogle(): Promise<UserProfile> {
         const result = await signInWithPopup(auth, googleProvider);
         user = result.user;
       } catch (popupErr: any) {
-        console.warn('Popup attempt failed, checking fallback:', popupErr?.code || popupErr?.message);
+        console.warn('Popup attempt note:', popupErr?.code || popupErr?.message);
         if (popupErr?.code === 'auth/popup-blocked' && isMobile) {
           await signInWithRedirect(auth, googleProvider);
           return new Promise(() => {}); // Wait for redirect
         }
-        throw popupErr;
       }
 
       if (user) {
-        const profile = formatFirebaseUser(user);
-        saveData(AUTH_STORAGE_KEY, profile);
-        return profile;
+        profile = formatFirebaseUser(user);
       }
     } catch (firebaseErr: any) {
-      console.warn('Firebase Auth popup note:', firebaseErr);
+      console.warn('Firebase Auth note:', firebaseErr);
     }
   }
 
-  // Graceful Google sign-in fallback (no fake unplash stock photo, no fake "Đại Học Quốc Gia")
-  const customUni = loadData<string>('university_google_phuonghang', '');
-  const customMajor = loadData<string>('major_google_phuonghang', '');
-  const defaultGoogleUser: UserProfile = {
-    id: 'google_user_phuonghang',
-    name: 'Phương Hằng',
-    email: 'nguyentphuongh@gmail.com',
-    avatar: 'PH',
-    picture: undefined, // Real avatar: if none, initials 'PH' will be rendered
-    university: customUni,
-    major: customMajor,
-    canNotify: true,
-    canBookmark: true,
-    createdAt: new Date().toISOString(),
-    provider: 'google',
-    isLoggedIn: true
-  };
+  // Fallback to active saved accounts if available
+  if (!profile) {
+    try {
+      const savedList = JSON.parse(localStorage.getItem('timi_saved_google_accounts') || '[]');
+      if (Array.isArray(savedList)) {
+        const acc = savedList.find((a: any) => a && a.email && a.id !== 'google_user_phuonghang');
+        if (acc && acc.email) {
+          const email = acc.email.trim().toLowerCase();
+          const name = acc.name?.trim() || email.split('@')[0];
+          const uid = acc.id || `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const customUni = loadData<string>(`university_${uid}`, '');
+          const customMajor = loadData<string>(`major_${uid}`, '');
+          const customCode = loadData<string>(`code_${uid}`, '');
 
-  saveData(AUTH_STORAGE_KEY, defaultGoogleUser);
-  return defaultGoogleUser;
+          profile = {
+            id: uid,
+            name,
+            email,
+            avatar: getInitialsFromName(name),
+            picture: acc.picture,
+            university: customUni || acc.university || '',
+            major: customMajor || acc.major || '',
+            studentCode: customCode || acc.studentCode || '',
+            canNotify: true,
+            canBookmark: true,
+            createdAt: new Date().toISOString(),
+            provider: 'google',
+            isLoggedIn: true,
+            linkedGoogle: true
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!profile) {
+    throw new Error('Vui lòng chọn hoặc nhập tài khoản Google của bạn');
+  }
+
+  // Sync with Backend Express server
+  try {
+    const backendResult = await syncGoogleLoginWithBackend(profile);
+    if (backendResult.success && backendResult.student) {
+      profile = {
+        ...profile,
+        ...backendResult.student,
+        isLoggedIn: true,
+        linkedGoogle: true
+      };
+    }
+  } catch (err) {
+    console.warn('Backend sync deferred:', err);
+  }
+
+  saveData(AUTH_STORAGE_KEY, profile);
+  try {
+    sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
+  } catch (e) {}
+  return profile;
 }
 
 /**
- * Sign out user from Firebase Auth and clear session
+ * Sign out user from Firebase Auth, Backend session, and clear state
  */
-export async function signOutGoogle(): Promise<void> {
+export async function signOutGoogle(userProfile?: UserProfile | null): Promise<void> {
   try {
+    if (userProfile?.id || userProfile?.email) {
+      await notifyBackendLogout(userProfile.id, userProfile.email);
+    }
     if (auth) {
       await signOut(auth);
     }
@@ -135,6 +210,9 @@ export async function signOutGoogle(): Promise<void> {
     console.error('Sign out error:', err);
   } finally {
     removeData(AUTH_STORAGE_KEY);
+    try {
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch (e) {}
     removeData('timi_current_active_user_id');
     removeData('timi_student_profile');
     clearPersonalizationOnLogout();
@@ -146,6 +224,9 @@ export async function signOutGoogle(): Promise<void> {
  */
 export function resetSession(): void {
   removeData(AUTH_STORAGE_KEY);
+  try {
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch (e) {}
   removeData('timi_student_profile');
   removeData('timi_current_active_user_id');
   clearPersonalizationOnLogout();

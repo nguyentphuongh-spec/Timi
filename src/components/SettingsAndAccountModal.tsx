@@ -19,7 +19,9 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserSettings } from '../types';
 import { playChime, playSuccessSound, SOUND_CATALOG } from '../utils/audio';
-import { signInWithGoogle, signOutGoogle, resetSession } from '../utils/firebase';
+import { signInWithGoogle, signOutGoogle, resetSession, getInitialsFromName } from '../utils/firebase';
+import { updateBackendStudentProfile } from '../utils/studentBackend';
+import { GoogleAccountChooserModal } from './GoogleAccountChooserModal';
 
 interface SettingsAndAccountModalProps {
   isOpen: boolean;
@@ -31,6 +33,7 @@ interface SettingsAndAccountModalProps {
   onResetData?: () => void;
   onExportData?: () => void;
   onImportData?: (jsonData: string) => boolean;
+  initialTab?: 'appearance' | 'profile' | 'notifications' | 'data';
 }
 
 export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = ({
@@ -42,36 +45,73 @@ export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = (
   onUpdateProfile,
   onResetData,
   onExportData,
-  onImportData
+  onImportData,
+  initialTab = 'appearance'
 }) => {
-  const [activeTab, setActiveTab] = useState<'appearance' | 'profile' | 'notifications' | 'data'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'profile' | 'notifications' | 'data'>(initialTab);
   const [soundCategoryTab, setSoundCategoryTab] = useState<'all' | 'gentle' | 'cute' | 'simple' | 'powerful'>('all');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isChooserOpen, setIsChooserOpen] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   const [uniInput, setUniInput] = useState(userProfile.university || '');
   const [majorInput, setMajorInput] = useState(userProfile.major || '');
+  const [studentCodeInput, setStudentCodeInput] = useState(userProfile.studentCode || '');
+  const [academicYearInput, setAcademicYearInput] = useState(userProfile.academicYear || '');
   const [isEditingSchool, setIsEditingSchool] = useState(false);
+  const [isSavingBackend, setIsSavingBackend] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync state if userProfile changes
   useEffect(() => {
     setUniInput(userProfile.university || '');
     setMajorInput(userProfile.major || '');
-  }, [userProfile.university, userProfile.major]);
+    setStudentCodeInput(userProfile.studentCode || '');
+    setAcademicYearInput(userProfile.academicYear || '');
+  }, [userProfile.university, userProfile.major, userProfile.studentCode, userProfile.academicYear]);
 
-  const handleSaveSchool = (e: React.FormEvent) => {
+  const handleSaveSchool = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSavingBackend(true);
+
     const updatedProfile: UserProfile = {
       ...userProfile,
       university: uniInput.trim(),
-      major: majorInput.trim()
+      major: majorInput.trim(),
+      studentCode: studentCodeInput.trim(),
+      academicYear: academicYearInput.trim()
     };
     onUpdateProfile(updatedProfile);
+
     const uid = userProfile.id || 'guest';
     localStorage.setItem(`university_${uid}`, uniInput.trim());
     localStorage.setItem(`major_${uid}`, majorInput.trim());
-    setIsEditingSchool(false);
-    playSuccessSound();
+    localStorage.setItem(`code_${uid}`, studentCodeInput.trim());
+    localStorage.setItem(`year_${uid}`, academicYearInput.trim());
+
+    // Sync to backend Express server
+    try {
+      await updateBackendStudentProfile({
+        id: userProfile.id,
+        email: userProfile.email,
+        name: userProfile.name,
+        university: uniInput.trim(),
+        major: majorInput.trim(),
+        studentCode: studentCodeInput.trim(),
+        academicYear: academicYearInput.trim()
+      });
+    } catch (err) {
+      console.warn('Backend update note:', err);
+    } finally {
+      setIsSavingBackend(false);
+      setIsEditingSchool(false);
+      playSuccessSound();
+    }
   };
 
   if (!isOpen) return null;
@@ -97,24 +137,22 @@ export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = (
     playChime(soundId);
   };
 
-  // Google Sign-in Handler
-  const handleGoogleLogin = async () => {
-    try {
-      setIsLoggingIn(true);
-      const profile = await signInWithGoogle();
-      onUpdateProfile(profile);
-      playSuccessSound();
-    } catch (err) {
-      console.error('Google Sign-In failed:', err);
-    } finally {
-      setIsLoggingIn(false);
-    }
+  // Google Sign-in Handler: Open Google Account Chooser
+  const handleGoogleLogin = () => {
+    setIsChooserOpen(true);
+  };
+
+  const handleAccountChosen = (profile: UserProfile) => {
+    onUpdateProfile(profile);
+    setIsChooserOpen(false);
+    setActiveTab('profile');
+    setIsEditingSchool(false);
   };
 
   // Google Sign-out Handler
   const handleGoogleLogout = async () => {
     try {
-      await signOutGoogle();
+      await signOutGoogle(userProfile);
       onUpdateProfile(null);
       playChime('sweet');
     } catch (err) {
@@ -126,6 +164,7 @@ export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = (
   const handleResetSession = () => {
     resetSession();
     if (onResetData) onResetData();
+    onUpdateProfile(null);
     playChime('sweet');
   };
 
@@ -425,14 +464,19 @@ export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = (
               {isLoggedIn ? (
                 /* Giao diện sau khi đăng nhập thành công */
                 <div className="p-5 rounded-3xl bg-gradient-to-r from-[#FFF0F3] via-white to-[#FFE8EE] border-2 border-[#FFCCD5] shadow-sm space-y-5 animate-fadeIn">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#4CAF50] bg-[#E8F5E9] px-2.5 py-1 rounded-full flex items-center gap-1 border border-[#C8E6C9]">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Đã Liên Kết Google Firebase
-                    </span>
-                    <span className="text-[11px] text-[#8C6D7C]">Tài khoản chính thức</span>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-[#4CAF50] bg-[#E8F5E9] px-2.5 py-1 rounded-full flex items-center gap-1 border border-[#C8E6C9]">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã Liên Kết Google Firebase
+                      </span>
+                      <span className="text-[11px] font-bold text-[#7D2E49] bg-[#FFF0F3] px-2 py-0.5 rounded-full border border-[#FFCCD5]">
+                        💾 Backend Riêng Từng Sinh Viên
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-[#8C6D7C]">Tài khoản cá nhân</span>
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-start sm:items-center gap-4">
                     {/* Real Avatar from Google or Initials */}
                     <div className="w-16 h-16 rounded-2xl themed-header-logo-bg text-white shadow-md overflow-hidden flex items-center justify-center flex-shrink-0 font-black text-xl">
                       {userProfile.picture ? (
@@ -442,86 +486,178 @@ export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = (
                           className="w-full h-full object-cover" 
                         />
                       ) : (
-                        <span>{userProfile.avatar || 'PH'}</span>
+                        <span>{userProfile.avatar || getInitialsFromName(userProfile.name || 'SV')}</span>
                       )}
                     </div>
 
-                    <div className="overflow-hidden space-y-0.5 flex-1">
+                    <div className="overflow-hidden space-y-1 flex-1">
                       <h4 className="text-base font-extrabold text-[#4A3B43] truncate">
                         {userProfile.name}
                       </h4>
                       <p className="text-xs themed-brand-text font-medium truncate">
                         {userProfile.email}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-[#8C6D7C] truncate">
+                      
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#8C6D7C] pt-0.5">
+                        <span className="font-semibold text-[#4A3B43]">
                           {userProfile.university ? `🎓 ${userProfile.university}` : 'Chưa cập nhật trường học'}
                         </span>
+                        {userProfile.major && (
+                          <span>• {userProfile.major}</span>
+                        )}
+                        {userProfile.studentCode && (
+                          <span className="bg-[#FFF0F3] text-[#D81B60] px-1.5 py-0.2 rounded font-bold text-[10px]">
+                            MSSV: {userProfile.studentCode}
+                          </span>
+                        )}
+                        {userProfile.academicYear && (
+                          <span className="text-[11px] text-[#8C6D7C]">
+                            ({userProfile.academicYear})
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
                         <button
                           type="button"
                           onClick={() => setIsEditingSchool(!isEditingSchool)}
-                          className="text-[11px] font-bold themed-brand-text hover:underline cursor-pointer"
+                          className="text-[11px] font-bold themed-brand-text hover:underline cursor-pointer inline-flex items-center gap-1 mt-1"
                         >
-                          {isEditingSchool ? 'Đóng' : '✏️ Đổi trường'}
+                          {isEditingSchool ? '✕ Đóng biểu mẫu' : '✏️ Chỉnh sửa thông tin trường học & MSSV'}
                         </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* University & Major Customizer */}
+                  {/* University, Major, Student ID & Academic Year Customizer */}
                   {isEditingSchool && (
-                    <form onSubmit={handleSaveSchool} className="p-3.5 rounded-2xl bg-white border border-[#FFCCD5] space-y-3 animate-fadeIn">
-                      <h5 className="text-xs font-bold text-[#7D2E49] uppercase">Cập Nhật Trường Học Của Bạn</h5>
-                      <div className="space-y-2">
+                    <form onSubmit={handleSaveSchool} className="p-4 rounded-2xl bg-white border-2 border-[#FFCCD5] space-y-3.5 animate-fadeIn shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-bold text-[#7D2E49] uppercase tracking-wide flex items-center gap-1.5">
+                          🎓 Hồ Sơ Sinh Viên Cá Nhân (Lưu Máy Chủ Backend)
+                        </h5>
+                        <span className="text-[10px] text-[#8C6D7C]">Đồng bộ theo tài khoản Google</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="text-[10px] text-[#8C6D7C] block mb-1">Trường Đại học / Cao đẳng</label>
+                          <label className="text-[11px] font-bold text-[#4A3B43] block mb-1">
+                            Trường Đại học / Cao đẳng <span className="text-red-400">*</span>
+                          </label>
                           <input
                             type="text"
                             value={uniInput}
                             onChange={(e) => setUniInput(e.target.value)}
-                            placeholder="Nhập tên trường học của bạn..."
-                            className="w-full px-3 py-1.5 rounded-xl border border-[#FFCCD5] text-xs focus:ring-2 focus:ring-[#FF85A1] focus:outline-none"
+                            placeholder="Ví dụ: ĐH Bách Khoa, ĐH Kinh Tế..."
+                            className="w-full px-3 py-2 rounded-xl border border-[#FFCCD5] text-xs focus:ring-2 focus:ring-[#FF85A1] focus:outline-none bg-[#FFFDFE]"
+                            required
                           />
                         </div>
+
                         <div>
-                          <label className="text-[10px] text-[#8C6D7C] block mb-1">Chuyên ngành học</label>
+                          <label className="text-[11px] font-bold text-[#4A3B43] block mb-1">
+                            Chuyên ngành học
+                          </label>
                           <input
                             type="text"
                             value={majorInput}
                             onChange={(e) => setMajorInput(e.target.value)}
-                            placeholder="Nhập chuyên ngành (ví dụ: Quản trị, Marketing, CNTT...)"
-                            className="w-full px-3 py-1.5 rounded-xl border border-[#FFCCD5] text-xs focus:ring-2 focus:ring-[#FF85A1] focus:outline-none"
+                            placeholder="Ví dụ: Công nghệ thông tin, Quản trị..."
+                            className="w-full px-3 py-2 rounded-xl border border-[#FFCCD5] text-xs focus:ring-2 focus:ring-[#FF85A1] focus:outline-none bg-[#FFFDFE]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-[#4A3B43] block mb-1">
+                            Mã số sinh viên (MSSV)
+                          </label>
+                          <input
+                            type="text"
+                            value={studentCodeInput}
+                            onChange={(e) => setStudentCodeInput(e.target.value)}
+                            placeholder="Ví dụ: 21127000..."
+                            className="w-full px-3 py-2 rounded-xl border border-[#FFCCD5] text-xs focus:ring-2 focus:ring-[#FF85A1] focus:outline-none bg-[#FFFDFE]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-[#4A3B43] block mb-1">
+                            Khóa học / Niên khóa
+                          </label>
+                          <input
+                            type="text"
+                            value={academicYearInput}
+                            onChange={(e) => setAcademicYearInput(e.target.value)}
+                            placeholder="Ví dụ: K2023 - Năm 2"
+                            className="w-full px-3 py-2 rounded-xl border border-[#FFCCD5] text-xs focus:ring-2 focus:ring-[#FF85A1] focus:outline-none bg-[#FFFDFE]"
                           />
                         </div>
                       </div>
-                      <div className="flex justify-end gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setIsEditingSchool(false)}
-                          className="px-3 py-1 text-xs text-[#8C6D7C] cursor-pointer"
-                        >
-                          Hủy
-                        </button>
-                        <button
-                          type="submit"
-                          className="px-4 py-1.5 rounded-xl themed-primary-btn text-xs font-bold shadow-xs transition cursor-pointer"
-                        >
-                          Lưu Thông Tin
-                        </button>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[11px] text-[#8C6D7C]">
+                          Dữ liệu sẽ được lưu riêng cho tài khoản Google của bạn
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingSchool(false)}
+                            className="px-3 py-1.5 text-xs text-[#8C6D7C] hover:text-[#4A3B43] cursor-pointer"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isSavingBackend}
+                            className="px-4 py-2 rounded-xl themed-primary-btn text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{isSavingBackend ? 'Đang lưu...' : 'Lưu Thông Tin Lên Máy Chủ'}</span>
+                          </button>
+                        </div>
                       </div>
                     </form>
                   )}
 
-                  {/* Actions: Sign Out and Reset */}
-                  <div className="pt-2 border-t border-[#FFE4E8] flex items-center justify-between flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleGoogleLogout}
-                      className="px-4 py-2 rounded-xl bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Đăng Xuất</span>
-                    </button>
+                  {/* Actions: Switch Account, Sign Out and Reset */}
+                  <div className="pt-2.5 border-t border-[#FFE4E8] flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setIsChooserOpen(true)}
+                        className="px-3.5 py-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        {/* Google Mini Icon */}
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                          <path
+                            fill="#4285F4"
+                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                          />
+                          <path
+                            fill="#34A853"
+                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                          />
+                          <path
+                            fill="#FBBC05"
+                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                          />
+                          <path
+                            fill="#EA4335"
+                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                          />
+                        </svg>
+                        <span>Đổi Tài Khoản Google</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleGoogleLogout}
+                        className="px-3.5 py-2 rounded-xl bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Đăng Xuất</span>
+                      </button>
+                    </div>
 
                     <button
                       type="button"
@@ -750,6 +886,14 @@ export const SettingsAndAccountModal: React.FC<SettingsAndAccountModalProps> = (
           )}
         </div>
       </div>
+
+      {/* Google Account Chooser Modal */}
+      <GoogleAccountChooserModal
+        isOpen={isChooserOpen}
+        onClose={() => setIsChooserOpen(false)}
+        currentEmail={userProfile.email}
+        onSelectAccount={handleAccountChosen}
+      />
     </div>
   );
 };

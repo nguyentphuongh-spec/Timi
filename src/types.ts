@@ -4,6 +4,10 @@ export interface UserProfile {
   name: string;
   university?: string;
   major?: string;
+  studentCode?: string; // Mã số sinh viên
+  academicYear?: string; // Khóa / Năm học
+  phone?: string;
+  bio?: string;
   avatar: string;
   canNotify: boolean;
   canBookmark: boolean;
@@ -13,6 +17,7 @@ export interface UserProfile {
   provider?: 'google' | 'guest';
   picture?: string;
   isLoggedIn?: boolean;
+  linkedGoogle?: boolean;
 }
 
 export type UserAccount = UserProfile;

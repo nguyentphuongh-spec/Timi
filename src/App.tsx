@@ -34,6 +34,11 @@ import {
   AUTH_STORAGE_KEY 
 } from './utils/firebase';
 
+import { 
+  fetchBackendStudentProfile, 
+  syncWorkspaceToBackend 
+} from './utils/studentBackend';
+
 import { playChime, playSuccessSound } from './utils/audio';
 
 import { Navbar } from './components/Navbar';
@@ -47,6 +52,7 @@ import { VirtualPetModal } from './components/VirtualPetModal';
 import { PetGardenView } from './components/PetGardenView';
 import { AlarmAndAlertsModal } from './components/AlarmAndAlertsModal';
 import { SettingsAndAccountModal } from './components/SettingsAndAccountModal';
+import { GoogleAccountChooserModal } from './components/GoogleAccountChooserModal';
 import { RealTimeClockBanner } from './components/RealTimeClockBanner';
 import { LiveAlertToast } from './components/LiveAlertToast';
 import { FocusOverlay } from './components/FocusOverlay';
@@ -55,8 +61,24 @@ import { useRealTimeNotifier } from './hooks/useRealTimeNotifier';
 export default function App() {
   // 1. Student Profile State (Google Firebase Auth + Local Persistence)
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
-    const cachedAuth = loadData<UserProfile | null>(AUTH_STORAGE_KEY, null);
-    if (cachedAuth && cachedAuth.isLoggedIn) return cachedAuth;
+    const cachedAuth = loadData<UserProfile | null>(AUTH_STORAGE_KEY, null) || 
+      (() => {
+        try {
+          const s = sessionStorage.getItem(AUTH_STORAGE_KEY);
+          return s ? JSON.parse(s) : null;
+        } catch (e) {
+          return null;
+        }
+      })();
+    if (cachedAuth && cachedAuth.isLoggedIn) {
+      // Clear legacy stuck mock test id if it matches old mock
+      if (cachedAuth.id === 'google_user_phuonghang') {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        sessionStorage.removeItem(AUTH_STORAGE_KEY);
+        return DEFAULT_STUDENT_PROFILE;
+      }
+      return cachedAuth;
+    }
     return DEFAULT_STUDENT_PROFILE;
   });
 
@@ -120,6 +142,9 @@ export default function App() {
   // Focus Overlay State (Khóa màn hình làm việc khi bật Pomodoro)
   const [isFocusOverlayOpen, setIsFocusOverlayOpen] = useState(false);
   const [focusOverlayTask, setFocusOverlayTask] = useState<Task | null>(null);
+  const [focusOverlayMode, setFocusOverlayMode] = useState<'work' | 'break' | 'long_break'>('work');
+  const [focusOverlayDuration, setFocusOverlayDuration] = useState<number>(25);
+  const [focusOverlayInitialSeconds, setFocusOverlayInitialSeconds] = useState<number | undefined>(undefined);
 
   // Modal open states
   const [isSearchIndexOpen, setIsSearchIndexOpen] = useState(false);
@@ -129,10 +154,22 @@ export default function App() {
   const [isPetModalOpen, setIsPetModalOpen] = useState(false);
   const [isAlarmsModalOpen, setIsAlarmsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isGoogleChooserOpen, setIsGoogleChooserOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'appearance' | 'profile' | 'notifications' | 'data'>('appearance');
 
   // Switch to specific authenticated user
-  const handleSwitchToUser = (profile: UserProfile) => {
+  const handleSwitchToUser = async (profile: UserProfile) => {
+    // If somehow legacy dummy mock ID is passed, ignore
+    if (profile.id === 'google_user_phuonghang') {
+      return;
+    }
     setUserProfile(profile);
+    saveData(AUTH_STORAGE_KEY, profile);
+    try {
+      sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
+    } catch (e) {}
+    localStorage.setItem('timi_current_active_user_id', profile.id || '');
+
     const uKeys = getUserStorageKeys(profile.id);
     const uSettings = loadData<UserSettings | null>(uKeys.SETTINGS, null) || DEFAULT_USER_SETTINGS;
     setSettings(uSettings);
@@ -142,6 +179,23 @@ export default function App() {
     setAlarms(loadData<AlarmItem[]>(uKeys.ALARMS, []));
     const uPet = loadData<VirtualPet | null>(uKeys.PET, null);
     setPet(uPet || createFreshUserData(profile).pet);
+
+    // Sync from Backend to retrieve customized university, major, studentCode
+    try {
+      const remote = await fetchBackendStudentProfile(profile.id, profile.email);
+      if (remote) {
+        setUserProfile(prev => ({
+          ...prev,
+          ...remote,
+          university: remote.university || prev.university,
+          major: remote.major || prev.major,
+          studentCode: remote.studentCode || prev.studentCode,
+          academicYear: remote.academicYear || prev.academicYear
+        }));
+      }
+    } catch (err) {
+      console.warn('Backend profile fetch deferred:', err);
+    }
   };
 
   // Switch to guest and completely wipe personalization
@@ -208,6 +262,22 @@ export default function App() {
       saveData(keys.SETTINGS, settings);
     }
   }, [settings, userProfile.id, userProfile.isLoggedIn]);
+
+  // Debounced sync to Backend Express Server for this student
+  useEffect(() => {
+    if (userProfile.isLoggedIn && userProfile.id) {
+      const timer = setTimeout(() => {
+        syncWorkspaceToBackend(userProfile.id!, userProfile.email, {
+          tasks,
+          schedule,
+          appointments,
+          alarms,
+          pet
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [tasks, schedule, appointments, alarms, pet, userProfile.id, userProfile.email, userProfile.isLoggedIn]);
 
   // Update Settings with real-time individual key persistence
   const handleUpdateSettings = (newSettings: Partial<UserSettings>) => {
@@ -322,8 +392,25 @@ export default function App() {
   };
 
   // ================= FOCUS OVERLAY MODE (KHÓA MÀN HÌNH LÀM VIỆC) =================
-  const handleStartFocusOverlay = (task: Task | null) => {
-    setFocusOverlayTask(task);
+  const handleStartFocusOverlay = (
+    param: Task | { mode?: 'work' | 'break' | 'long_break'; durationMinutes?: number; initialSeconds?: number; task?: Task | null } | null
+  ) => {
+    if (param && typeof param === 'object' && 'mode' in param) {
+      const mode = param.mode || 'work';
+      const duration = param.durationMinutes || (
+        mode === 'break' ? settings.pomodoroBreak || 5 : mode === 'long_break' ? settings.pomodoroLongBreak || 15 : settings.pomodoroWork || 25
+      );
+      setFocusOverlayMode(mode);
+      setFocusOverlayDuration(duration);
+      setFocusOverlayInitialSeconds(param.initialSeconds);
+      setFocusOverlayTask(param.task || null);
+    } else {
+      const task = param as Task | null;
+      setFocusOverlayMode('work');
+      setFocusOverlayDuration(task?.durationMinutes || settings.pomodoroWork || 25);
+      setFocusOverlayInitialSeconds(undefined);
+      setFocusOverlayTask(task);
+    }
     setIsFocusOverlayOpen(true);
   };
 
@@ -332,11 +419,25 @@ export default function App() {
     setFocusOverlayTask(null);
   };
 
-  const handleFocusOverlayComplete = (completedTask: Task | null) => {
-    const focusMinutes = completedTask?.durationMinutes || settings.pomodoroWork || 25;
+  const handleFocusOverlayPauseAndExit = (_remainingSeconds: number) => {
+    setIsFocusOverlayOpen(false);
+  };
+
+  const handleFocusOverlayResetAndExit = () => {
+    setIsFocusOverlayOpen(false);
+    setFocusOverlayTask(null);
+  };
+
+  const handleFocusOverlayComplete = (
+    completedTask: Task | null, 
+    completedMode: 'work' | 'break' | 'long_break' = 'work'
+  ) => {
+    const focusMinutes = focusOverlayDuration || completedTask?.durationMinutes || settings.pomodoroWork || 25;
+    
+    // Reward pet & student
     handleCompletePomodoroSession(focusMinutes);
 
-    if (completedTask) {
+    if (completedTask && completedMode === 'work') {
       handleToggleTask(completedTask.id);
     }
 
@@ -344,8 +445,11 @@ export default function App() {
     const existingHistory = loadData<any[]>('timi_focus_sessions', []);
     const newSession = {
       id: `foc_${Date.now()}`,
-      taskTitle: completedTask ? completedTask.title : 'Phiên Tập Trung Pomodoro',
+      taskTitle: completedTask ? completedTask.title : (
+        completedMode === 'work' ? 'Phiên Tập Trung Pomodoro' : completedMode === 'break' ? 'Nghỉ Ngắn Thư Giãn' : 'Nghỉ Dài'
+      ),
       minutes: focusMinutes,
+      mode: completedMode,
       completedAt: new Date().toISOString()
     };
     saveData('timi_focus_sessions', [newSession, ...existingHistory]);
@@ -556,9 +660,13 @@ export default function App() {
       <FocusOverlay
         isOpen={isFocusOverlayOpen}
         task={focusOverlayTask}
-        durationMinutes={focusOverlayTask?.durationMinutes || settings.pomodoroWork || 25}
+        mode={focusOverlayMode}
+        durationMinutes={focusOverlayDuration}
+        initialSeconds={focusOverlayInitialSeconds}
         pet={pet}
         onCancel={handleFocusOverlayCancel}
+        onPauseAndExit={handleFocusOverlayPauseAndExit}
+        onResetAndExit={handleFocusOverlayResetAndExit}
         onComplete={handleFocusOverlayComplete}
       />
 
@@ -580,7 +688,15 @@ export default function App() {
         onOpenSearchAndIndex={() => setIsSearchIndexOpen(true)}
         onOpenPetModal={() => setActiveView('pet_garden')}
         onOpenAlarmsModal={() => setIsAlarmsModalOpen(true)}
-        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+        onOpenSettingsModal={() => {
+          setSettingsTab('appearance');
+          setIsSettingsModalOpen(true);
+        }}
+        onOpenGoogleChooser={() => setIsGoogleChooserOpen(true)}
+        onOpenProfileTab={() => {
+          setSettingsTab('profile');
+          setIsSettingsModalOpen(true);
+        }}
       />
 
       {/* 4. Student Status Banner */}
@@ -811,6 +927,18 @@ export default function App() {
         onResetData={handleResetData}
         onExportData={handleExportData}
         onImportData={handleImportData}
+        initialTab={settingsTab}
+      />
+
+      {/* 6. Root Google Account Chooser & Multi-Student Account Switcher */}
+      <GoogleAccountChooserModal
+        isOpen={isGoogleChooserOpen}
+        onClose={() => setIsGoogleChooserOpen(false)}
+        currentEmail={userProfile.isLoggedIn ? userProfile.email : undefined}
+        onSelectAccount={(chosen) => {
+          handleSwitchToUser(chosen);
+          setIsGoogleChooserOpen(false);
+        }}
       />
     </div>
   );

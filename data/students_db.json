@@ -1,0 +1,26 @@
+{
+  "students": {
+    "hoangnam.student@gmail.com": {
+      "id": "google_nam_123",
+      "email": "hoangnam.student@gmail.com",
+      "name": "Nguyễn Hoàng Nam",
+      "avatar": "NN",
+      "university": "Đại học Bách Khoa",
+      "major": "Khoa học Máy tính",
+      "studentCode": "2211099",
+      "academicYear": "",
+      "provider": "google",
+      "isLoggedIn": true,
+      "linkedGoogle": true,
+      "createdAt": "2026-10-21T03:44:40.072Z",
+      "lastLoginAt": "2026-10-21T03:44:40.072Z",
+      "workspace": {
+        "tasks": [],
+        "schedule": [],
+        "appointments": [],
+        "alarms": [],
+        "water": 0
+      }
+    }
+  }
+}
