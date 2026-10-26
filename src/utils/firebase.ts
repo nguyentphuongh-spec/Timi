@@ -31,14 +31,15 @@ export interface SavedGoogleAccount {
 export const SAVED_ACCOUNTS_KEY = 'timi_saved_google_accounts';
 export const AUTH_STORAGE_KEY = 'timi_firebase_auth_user';
 
-// Standard Firebase config - can be configured via environment variables
+// Real Firebase Project Config provided for timi-3e5b2
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyFakeKeyForPreviewEnviromentTimi99',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'timi-student-app.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'timi-student-app',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'timi-student-app.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '123456789012',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:123456789012:web:timistudentapplet'
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCbHsRmmPBC_XhUeCv8m8XZItOD0pQb5Ck",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "timi-3e5b2.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "timi-3e5b2",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "timi-3e5b2.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "351393400014",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:351393400014:web:13d8440985d7d44de17c9f",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-N7JPT2RRHV"
 };
 
 // Initialize Firebase App safely
